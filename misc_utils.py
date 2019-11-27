@@ -1,5 +1,6 @@
 import tensorflow as tf
 import numpy as np
+from typing import List
 
 
 def to_list(x):
@@ -8,6 +9,14 @@ def to_list(x):
     if isinstance(x, tuple):
         return list(x)
     return [x]
+
+
+def to_constant_list(inputs, name: str) -> List[tf.Tensor]:
+    inputs = to_list(inputs)
+    if len(inputs) == 1:
+        return [tf.constant(inputs[0], name=name)]
+    else:
+        return [tf.constant(x, name="{}_{}".format(name, i)) for i, x in enumerate(to_list(inputs))]
 
 
 def int_ceil(value, epsilon=1e-5) -> int:
