@@ -3,6 +3,7 @@ from tensorflow.python.keras import Model
 import os
 from time import time
 from typing import Dict
+from tensorflow.python.keras.engine.training_utils import MetricsAggregator
 
 from modalities import RawVideo
 
@@ -131,3 +132,38 @@ def add_gaussian_noise(modalities: Dict[str, tf.Tensor],
 
     modalities[RawVideo.id()] = raw_video
     return modalities
+
+
+class WarmupSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
+    def __init__(self, warmup_steps: int, learning_rate=1e-3):
+        super(WarmupSchedule, self).__init__()
+
+        self.learning_rate = learning_rate
+        self.warmup_steps = warmup_steps
+
+    def __call__(self, step):
+        factor = (step + 1) / self.warmup_steps
+        return self.learning_rate * tf.math.minimum(factor, 1.0)
+
+    def get_config(self):
+        config = {
+            "learning_rate": self.learning_rate,
+            "warmup_steps": self.warmup_steps,
+        }
+        return config
+
+
+class LossAggregator(MetricsAggregator):
+    def aggregate(self, batch_outs, batch_start=None, batch_end=None):
+        for i in range(len(self.results)):
+            loss = batch_outs[i]
+            if not self.use_steps:
+                loss *= (batch_end - batch_start)
+            self.results[i] += loss
+
+    def finalize(self):
+        if not self.results:
+            raise ValueError("Empty training data.")
+
+        for i in range(len(self.results)):
+            self.results[i] /= (self.num_samples or self.steps)

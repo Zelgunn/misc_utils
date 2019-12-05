@@ -4,6 +4,9 @@ from tensorflow.core.util import event_pb2
 from tensorflow.python.ops import summary_ops_v2
 import numpy as np
 import time
+from typing import List
+
+from misc_utils.general import to_input_layers, to_list
 
 
 # Inspired by : https://github.com/alexlee-gk
@@ -168,3 +171,10 @@ def merge_video_time_dimensions(video: tf.Tensor) -> tf.Tensor:
     batch_size, height, width, channels = video_shape[0], video_shape[-3], video_shape[-2], video_shape[-1]
     length = tf.reduce_prod(video_shape[1:-3])
     return tf.reshape(video, [batch_size, length, height, width, channels])
+
+
+def tf_function_summary(tf_function, input_shapes: List, step=None, name=None):
+    inputs = to_input_layers(input_shapes)
+    inputs = to_list(inputs)
+    graph = tf_function.get_concrete_function(*inputs).graph
+    return summary_ops_v2.graph(graph, step=step, name=name)
