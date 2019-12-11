@@ -1,9 +1,10 @@
 import tensorflow as tf
 from tensorflow.python.keras import Model
+from tensorflow.python.keras.engine.training_utils import MetricsAggregator
 import os
 from time import time
+from abc import ABC
 from typing import Dict
-from tensorflow.python.keras.engine.training_utils import MetricsAggregator
 
 from modalities import RawVideo
 
@@ -134,16 +135,28 @@ def add_gaussian_noise(modalities: Dict[str, tf.Tensor],
     return modalities
 
 
-class WarmupSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
-    def __init__(self, warmup_steps: int, learning_rate=1e-3):
-        super(WarmupSchedule, self).__init__()
-
+class CustomLearningRateSchedule(tf.keras.optimizers.schedules.LearningRateSchedule, ABC):
+    def __init__(self, learning_rate):
+        super(CustomLearningRateSchedule, self).__init__()
         self.learning_rate = learning_rate
+
+    def get_learning_rate(self, step):
+        if callable(self.learning_rate):
+            learning_rate = self.learning_rate(step)
+        else:
+            learning_rate = self.learning_rate
+        return learning_rate
+
+
+class WarmupSchedule(CustomLearningRateSchedule):
+    def __init__(self, warmup_steps: int, learning_rate=1e-3):
+        super(WarmupSchedule, self).__init__(learning_rate=learning_rate)
         self.warmup_steps = warmup_steps
 
     def __call__(self, step):
         factor = (step + 1) / self.warmup_steps
-        return self.learning_rate * tf.math.minimum(factor, 1.0)
+
+        return self.get_learning_rate(step) * tf.math.minimum(factor, 1.0)
 
     def get_config(self):
         config = {
