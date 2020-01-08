@@ -3,7 +3,7 @@ from tensorflow.python.keras import Model
 from tensorflow.python.keras.engine.training_utils import MetricsAggregator
 import os
 from time import time
-from abc import ABC
+from abc import abstractmethod
 from typing import Dict
 
 from modalities import RawVideo
@@ -135,35 +135,95 @@ def add_gaussian_noise(modalities: Dict[str, tf.Tensor],
     return modalities
 
 
-class CustomLearningRateSchedule(tf.keras.optimizers.schedules.LearningRateSchedule, ABC):
-    def __init__(self, learning_rate):
+class CustomLearningRateSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
+    def __init__(self,
+                 learning_rate,
+                 step_offset=0
+                 ):
         super(CustomLearningRateSchedule, self).__init__()
         self.learning_rate = learning_rate
-
-    def get_learning_rate(self, step):
-        if callable(self.learning_rate):
-            learning_rate = self.learning_rate(step)
-        else:
-            learning_rate = self.learning_rate
-        return learning_rate
-
-
-class WarmupSchedule(CustomLearningRateSchedule):
-    def __init__(self, warmup_steps: int, learning_rate=1e-3):
-        super(WarmupSchedule, self).__init__(learning_rate=learning_rate)
-        self.warmup_steps = warmup_steps
+        self.step_offset = step_offset
 
     def __call__(self, step):
-        factor = (step + 1) / self.warmup_steps
+        return self.call(step + self.step_offset)
 
-        return self.get_learning_rate(step) * tf.math.minimum(factor, 1.0)
+    def call(self, step):
+        return self.get_learning_rate(step)
+
+    def get_learning_rate(self, step):
+        return self._get_learning_rate(step, self.learning_rate)
+
+    @staticmethod
+    def _get_learning_rate(step, learning_rate):
+        if callable(learning_rate):
+            learning_rate = learning_rate(step)
+        return learning_rate
 
     def get_config(self):
         config = {
             "learning_rate": self.learning_rate,
-            "warmup_steps": self.warmup_steps,
+            "step_offset": self.step_offset,
         }
         return config
+
+
+class WarmupSchedule(CustomLearningRateSchedule):
+    def __init__(self,
+                 warmup_steps: int,
+                 learning_rate=1e-3,
+                 **kwargs):
+        super(WarmupSchedule, self).__init__(learning_rate=learning_rate,
+                                             **kwargs)
+        self.warmup_steps = warmup_steps
+
+    def call(self, step):
+        factor = (step + 1) / self.warmup_steps
+        base_learning_rate = self.get_learning_rate(step)
+        return base_learning_rate * tf.math.minimum(factor, 1.0)
+
+    def get_config(self):
+        base_config = super(WarmupSchedule, self).get_config()
+        config = {
+            "warmup_steps": self.warmup_steps,
+        }
+        return {**base_config, **config}
+
+
+class CyclicSchedule(CustomLearningRateSchedule):
+    def __init__(self,
+                 cycle_length: int,
+                 learning_rate=1e-3,
+                 max_learning_rate=1e-2,
+                 **kwargs):
+        super(CyclicSchedule, self).__init__(learning_rate=learning_rate,
+                                             **kwargs)
+        self.cycle_length = cycle_length
+        self.max_learning_rate = max_learning_rate
+
+    def call(self, step):
+        factor = step / self.cycle_length
+        factor = tf.truncatemod(factor, 1.0)
+        factor = tf.cond(pred=factor > 0.5,
+                         true_fn=lambda: 1.0 - factor,
+                         false_fn=lambda: factor)
+        factor *= 2
+
+        base_learning_rate = self.get_learning_rate(step)
+        max_learning_rate = self.get_max_learning_rate(step)
+        learning_rate = factor * max_learning_rate + (1 - factor) * base_learning_rate
+
+        return learning_rate
+
+    def get_max_learning_rate(self, step):
+        return self._get_learning_rate(step, self.max_learning_rate)
+
+    def get_config(self):
+        base_config = super(CyclicSchedule, self).get_config()
+        config = {
+            "cycle_length": self.cycle_length,
+            "max_learning_rate": self.max_learning_rate,
+        }
+        return {**base_config, **config}
 
 
 class LossAggregator(MetricsAggregator):
