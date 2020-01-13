@@ -4,7 +4,7 @@ from tensorflow.core.util import event_pb2
 from tensorflow.python.ops import summary_ops_v2
 import numpy as np
 import time
-from typing import List
+from typing import List, Union
 
 from misc_utils.general import to_input_layers, to_list
 
@@ -178,3 +178,32 @@ def tf_function_summary(tf_function, input_shapes: List, step=None, name=None):
     inputs = to_list(inputs)
     graph = tf_function.get_concrete_function(*inputs).graph
     return summary_ops_v2.graph(graph, step=step, name=name)
+
+
+def check_image_video_rank(data: Union[tf.Tensor, List[tf.Tensor]]):
+    if isinstance(data, list) or isinstance(data, tuple):
+        for sample in data:
+            check_image_video_rank(sample)
+
+    elif data.shape.rank < 4:
+        raise ValueError("Incorrect rank for images/video, expected rank >= 4, got {} with rank {}."
+                         .format(data.shape, data.shape.rank))
+
+
+def use_video_summary(data: tf.Tensor) -> bool:
+    return data.shape.rank >= 5
+
+
+def convert_tensors_uint8(tensors: Union[tf.Tensor, List[tf.Tensor]]) -> List[tf.Tensor]:
+    tensors = to_list(tensors)
+    tensors = [convert_tensor_uint8(tensor) for tensor in tensors]
+    return tensors
+
+
+def convert_tensor_uint8(tensor) -> tf.Tensor:
+    tensor: tf.Tensor = tf.convert_to_tensor(tensor)
+    tensor_min = tf.reduce_min(tensor)
+    tensor_max = tf.reduce_max(tensor)
+    tensor = (tensor - tensor_min) / (tensor_max - tensor_min)
+    normalized = tf.cast(tensor * tf.constant(255, dtype=tensor.dtype), tf.uint8)
+    return normalized
