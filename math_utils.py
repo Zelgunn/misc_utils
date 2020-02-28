@@ -15,3 +15,8 @@ def diff(tensor, axis=-1):
     right = tf.strided_slice(tensor, begin=offset, end=partial_shape)
 
     return right - left
+
+
+@tf.function
+def lerp(a, b, x):
+    return (1.0 - x) * a + b * x

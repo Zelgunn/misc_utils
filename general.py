@@ -53,8 +53,3 @@ def to_input_layers(input_shapes: List, names: Union[List, str] = None):
     else:
         layer = Input(batch_shape=input_shapes, name=names)
         return layer
-
-
-@tf.function
-def coin_flip():
-    return tf.random.uniform(shape=[], minval=0.0, maxval=1.0) < 0.5
