@@ -1,8 +1,14 @@
 import tensorflow as tf
 from tensorflow.python.keras import Model
 from tensorflow.python.keras.engine.training_utils import MetricsAggregator
+from tensorflow.python.keras.saving import hdf5_format, saving_utils
+from tensorflow.python.keras.optimizer_v2.optimizer_v2 import OptimizerV2
+from tensorflow.python.util import serialization
+import h5py
+import json
 import os
 from time import time
+from typing import Union, Optional
 
 
 def get_log_dir(base_dir):
@@ -34,6 +40,7 @@ def save_model_info(model: Model, log_dir):
     save_model_summary(model, log_dir)
 
 
+# region Learning rate schedules
 class CustomLearningRateSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
     def __init__(self,
                  learning_rate,
@@ -148,6 +155,8 @@ class CyclicSchedule(CustomLearningRateSchedule):
         return {**base_config, **config}
 
 
+# endregion
+
 class LossAggregator(MetricsAggregator):
     def aggregate(self, batch_outs, batch_start=None, batch_end=None):
         for i in range(len(self.results)):
@@ -162,3 +171,100 @@ class LossAggregator(MetricsAggregator):
 
         for i in range(len(self.results)):
             self.results[i] /= (self.num_samples or self.steps)
+
+
+# region HDF5 / H5PY
+class SharedHDF5(object):
+    def __init__(self, filepath: Union[str, h5py.File], mode: str = None):
+        self.filepath = filepath
+        self.mode = mode
+
+        self.file: Optional[h5py.File] = None
+        self.filepath_is_file = isinstance(filepath, h5py.File)
+
+        if not self.filepath_is_file and mode is None:
+            raise ValueError("Mode must be specified is filepath is not a h5py.File.")
+
+    def __enter__(self):
+        if self.filepath_is_file:
+            self.file = self.filepath
+        else:
+            self.file = h5py.File(name=self.filepath, mode=self.mode)
+        return self.file
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.file.flush()
+        if not self.filepath_is_file:
+            self.file.close()
+        self.file = None
+
+
+def save_model_to_hdf5(hdf5_group: h5py.Group, model: Model, model_id: str):
+    """Saves a model to a HDF5 file.
+
+    The saved model contains:
+        - the model"s configuration (topology)
+        - the model"s weights
+
+    Thus the saved model can be reinstantiated in the exact same state, without any of the code used for model
+    definition or training.
+
+    Arguments:
+        hdf5_group: A pointer to a HDF5 group to save the model.
+        model: Keras model instance to be saved.
+        model_id: ID of the model.
+    Raises:
+        ImportError: if h5py is not available.
+    """
+
+    model_metadata = saving_utils.model_metadata(model=model, include_optimizer=False, require_config=True)
+    for k, v in model_metadata.items():
+        if isinstance(v, (dict, list, tuple)):
+            v = json.dumps(v, default=serialization.get_json_type).encode("utf8")
+        hdf5_group.attrs[k] = v
+
+    model_weights_group = hdf5_group.create_group("model_{}_weights".format(model_id))
+    model_layers = model.layers
+    hdf5_format.save_weights_to_hdf5_group(model_weights_group, model_layers)
+
+
+def save_optimizer_weights_to_hdf5_group(hdf5_group: h5py.Group, optimizer: OptimizerV2, optimizer_id: str):
+    """Saves optimizer weights of a optimizer to a HDF5 group.
+
+    Arguments:
+        hdf5_group: A pointer to a HDF5 group to save the optimizer's weights.
+        optimizer: Optimizer instance.
+        optimizer_id: Name of the optimizer (for ID).
+    """
+
+    symbolic_weights = getattr(optimizer, "weights")
+    if symbolic_weights:
+        weight_names = [str(weights.name).encode("utf8") for weights in symbolic_weights]
+        weight_values = optimizer.get_weights()
+
+        weights_group = hdf5_group.create_group("optimizer_{}_weights".format(optimizer_id))
+        hdf5_format.save_attributes_to_hdf5_group(weights_group, "weight_names", weight_names)
+
+        for name, value in zip(weight_names, weight_values):
+            weights_dataset = weights_group.create_dataset(name, value.shape, dtype=value.dtype)
+            if not value.shape:
+                weights_dataset[()] = value
+            else:
+                weights_dataset[:] = value
+
+
+def load_optimizer_weights_from_hdf5_group(hdf5_group: h5py.Group, optimizer: OptimizerV2, optimizer_id: str):
+    """Load optimizer weights from a HDF5 group.
+
+    Arguments:
+        hdf5_group: A pointer to a HDF5 group to load the optimizer's weights from.
+        optimizer: Optimizer instance.
+        optimizer_id: Name of the optimizer (for ID).
+
+    """
+    weights_group = hdf5_group["optimizer_{}_weights".format(optimizer_id)]
+    optimizer_weight_names = hdf5_format.load_attributes_from_hdf5_group(weights_group, "weight_names")
+    weights = [weights_group[weight_name] for weight_name in optimizer_weight_names]
+    optimizer.set_weights(weights)
+
+# endregion
