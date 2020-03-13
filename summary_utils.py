@@ -185,8 +185,8 @@ def check_image_video_rank(data: Union[tf.Tensor, List[tf.Tensor]]):
         for sample in data:
             check_image_video_rank(sample)
 
-    elif data.shape.rank < 4:
-        raise ValueError("Incorrect rank for images/video, expected rank >= 4, got {} with rank {}."
+    elif data.shape.rank < 3:
+        raise ValueError("Incorrect rank for images/video, expected rank >= 3, got {} with rank {}."
                          .format(data.shape, data.shape.rank))
 
 
