@@ -1,4 +1,5 @@
 import tensorflow as tf
+from tensorflow.python.keras import backend
 from typing import List, Tuple
 import numpy as np
 
@@ -53,3 +54,14 @@ def join_two_distributions_statistics(count_1: int, count_2: int,
     stddev = np.sqrt(variance)
 
     return count, mean, stddev
+
+
+def squash(tensor: tf.Tensor, axis: int) -> tf.Tensor:
+    squared_norm = tf.reduce_sum(tf.square(tensor), axis=axis, keepdims=True)
+    norm = tf.sqrt(squared_norm + backend.epsilon())
+
+    squash_factor = squared_norm / (1 + squared_norm)
+    unit_vector = tensor / norm
+
+    result = unit_vector * squash_factor
+    return result
