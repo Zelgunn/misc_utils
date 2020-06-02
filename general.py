@@ -1,7 +1,8 @@
 import tensorflow as tf
 from tensorflow.keras.layers import Input
 import numpy as np
-from typing import List, Union
+import os
+from typing import List, Union, Tuple
 
 
 def to_list(x):
@@ -53,3 +54,14 @@ def to_input_layers(input_shapes: List, names: Union[List, str] = None):
     else:
         layer = Input(batch_shape=input_shapes, name=names)
         return layer
+
+
+def list_dir_recursive(path: str, suffix: Union[Tuple[str, ...], str] = None) -> List[str]:
+    listed_files = []
+    no_suffix = suffix is None
+    for root, dirs, files in os.walk(path):
+        for file in files:
+            if no_suffix or file.endswith(suffix):
+                file = os.path.join(root, file)
+                listed_files.append(file)
+    return listed_files
