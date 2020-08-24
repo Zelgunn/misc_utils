@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.python.keras import backend
-from typing import List, Tuple
+from typing import List, Tuple, Callable
 import numpy as np
 
 
@@ -65,3 +65,60 @@ def squash(tensor: tf.Tensor, axis: int) -> tf.Tensor:
 
     result = unit_vector * squash_factor
     return result
+
+
+def reduce_mean_from(inputs: tf.Tensor, start_axis=1, keepdims=False) -> tf.Tensor:
+    return reduce_from(inputs, start_axis, tf.reduce_mean, keepdims=keepdims)
+
+
+def reduce_sum_from(inputs: tf.Tensor, start_axis=1, keepdims=False) -> tf.Tensor:
+    return reduce_from(inputs, start_axis, tf.reduce_sum, keepdims=keepdims)
+
+
+def reduce_prod_from(inputs: tf.Tensor, start_axis=1, keepdims=False) -> tf.Tensor:
+    return reduce_from(inputs, start_axis, tf.reduce_prod, keepdims=keepdims)
+
+
+def reduce_std_from(inputs: tf.Tensor, start_axis=1, keepdims=False) -> tf.Tensor:
+    return reduce_from(inputs, start_axis, tf.math.reduce_std, keepdims=keepdims)
+
+
+def reduce_adjusted_std_from(inputs: tf.Tensor, start_axis=1, keepdims=False) -> tf.Tensor:
+    return reduce_from(inputs, start_axis, reduce_adjusted_stddev, keepdims=keepdims)
+
+
+def reduce_min_from(inputs: tf.Tensor, start_axis=1, keepdims=False) -> tf.Tensor:
+    return reduce_from(inputs, start_axis, tf.reduce_min, keepdims=keepdims)
+
+
+def reduce_max_from(inputs: tf.Tensor, start_axis=1, keepdims=False) -> tf.Tensor:
+    return reduce_from(inputs, start_axis, tf.reduce_max, keepdims=keepdims)
+
+
+def reduce_from(inputs: tf.Tensor, start_axis: int, fn: Callable, **kwargs):
+    if start_axis < 0:
+        start_axis = inputs.shape.rank + start_axis
+    reduction_axis = tuple(range(start_axis, inputs.shape.rank))
+    return fn(inputs, axis=reduction_axis, **kwargs)
+
+
+def reduce_adjusted_stddev(inputs: tf.Tensor, axis: int, keepdims=False) -> tf.Tensor:
+    inputs_shape = tf.shape(inputs)
+    sample_dims = tf.gather(inputs_shape, axis)
+    sample_size = tf.math.reduce_prod(input_tensor=sample_dims)
+    sample_stddev = tf.math.reduce_std(input_tensor=inputs, axis=axis, keepdims=keepdims)
+    min_stddev = tf.math.rsqrt(tf.cast(sample_size, inputs.dtype))
+    adjusted_stddev = tf.maximum(sample_stddev, min_stddev)
+    return adjusted_stddev
+
+
+def get_mean_and_stddev(inputs: tf.Tensor, start_axis=1) -> Tuple[tf.Tensor, tf.Tensor]:
+    sample_means = reduce_mean_from(inputs=inputs, start_axis=start_axis, keepdims=True)
+    sample_stddev = reduce_adjusted_std_from(inputs=inputs, start_axis=start_axis, keepdims=True)
+    return sample_means, sample_stddev
+
+
+def standardize_from(inputs: tf.Tensor, start_axis=1) -> tf.Tensor:
+    sample_means, sample_stddev = get_mean_and_stddev(inputs=inputs, start_axis=start_axis)
+    outputs = (inputs - sample_means) / sample_stddev
+    return outputs
