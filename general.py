@@ -65,3 +65,10 @@ def list_dir_recursive(path: str, suffix: Union[Tuple[str, ...], str] = None) ->
                 file = os.path.join(root, file)
                 listed_files.append(file)
     return listed_files
+
+
+@tf.function
+def expand_dims_to_rank(x: tf.Tensor, target: tf.Tensor) -> tf.Tensor:
+    rank_offset = target.shape.rank - x.shape.rank
+    x = tf.reshape(x, tf.concat([tf.shape(x), [1] * rank_offset], axis=0))
+    return x
