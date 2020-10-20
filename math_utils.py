@@ -128,11 +128,16 @@ def standardize_from(inputs: tf.Tensor, start_axis=1) -> tf.Tensor:
 def binarize(x: tf.Tensor,
              threshold: tf.Tensor,
              temperature: tf.Tensor,
-             add_noise: bool = False
+             add_noise: bool = False,
+             only_greater: bool = True,
              ) -> tf.Tensor:
     x = 1.0 / (1.0 + tf.exp(-temperature * (x - threshold)))
     if add_noise:
         noise = tf.stop_gradient(x)
-        noise = tf.cast(tf.math.greater(noise, 0.5), tf.float32) - noise
+        if only_greater:
+            x_over_threshold = tf.math.greater(noise, 0.5)
+        else:
+            x_over_threshold = tf.math.greater_equal(noise, 0.5)
+        noise = tf.cast(x_over_threshold, tf.float32) - noise
         x += noise
     return x
