@@ -3,12 +3,15 @@ from tensorflow.core.framework import summary_pb2
 from tensorflow.core.util import event_pb2
 from tensorflow.python.ops import summary_ops_v2
 import numpy as np
+import matplotlib.cm
 import time
 from typing import List, Union
 
 from misc_utils.general import to_input_layers, to_list
+from misc_utils.math_utils import normalize_from
 
 
+# region Image / Video
 # Inspired by : https://github.com/alexlee-gk
 def encode_gif(images: np.ndarray,
                fps: float or int):
@@ -173,13 +176,6 @@ def merge_video_time_dimensions(video: tf.Tensor) -> tf.Tensor:
     return tf.reshape(video, [batch_size, length, height, width, channels])
 
 
-def tf_function_summary(tf_function, input_shapes: List, step=None, name=None):
-    inputs = to_input_layers(input_shapes)
-    inputs = to_list(inputs)
-    graph = tf_function.get_concrete_function(*inputs).graph
-    return summary_ops_v2.graph(graph, step=step, name=name)
-
-
 def check_image_video_rank(data: Union[tf.Tensor, List[tf.Tensor]]):
     if isinstance(data, list) or isinstance(data, tuple):
         for sample in data:
@@ -194,6 +190,32 @@ def use_video_summary(data: tf.Tensor) -> bool:
     return data.shape.rank >= 5
 
 
+# endregion
+
+# region Network packets
+def network_packet_summary(name: str,
+                           network_packets: tf.Tensor,
+                           step: int = None,
+                           max_outputs=3,
+                           zoom: int = None,
+                           normalize=True,
+                           cmap="GnBu"
+                           ):
+    if cmap is not None:
+        as_image = tf_apply_cmap(network_packets, cmap=cmap, color_count=256, normalize=normalize)
+    else:
+        as_image = tf.expand_dims(network_packets, axis=-1)
+        if normalize:
+            as_image = normalize_from(as_image, as_image.shape.rank - 2)
+
+    if zoom is not None:
+        image_size = tf.shape(network_packets)[1:3] * zoom
+        as_image = tf.image.resize(as_image, image_size, method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+    return tf.summary.image(name, as_image, step=step, max_outputs=max_outputs)
+
+
+# endregion
+
 def convert_tensors_uint8(tensors: Union[tf.Tensor, List[tf.Tensor]]) -> List[tf.Tensor]:
     tensors = to_list(tensors)
     tensors = [convert_tensor_uint8(tensor) for tensor in tensors]
@@ -207,3 +229,26 @@ def convert_tensor_uint8(tensor) -> tf.Tensor:
     tensor = (tensor - tensor_min) / (tensor_max - tensor_min)
     normalized = tf.cast(tensor * tf.constant(255, dtype=tensor.dtype), tf.uint8)
     return normalized
+
+
+def tf_function_summary(tf_function, input_shapes: List, step=None, name=None):
+    inputs = to_input_layers(input_shapes)
+    inputs = to_list(inputs)
+    graph = tf_function.get_concrete_function(*inputs).graph
+    return summary_ops_v2.graph(graph, step=step, name=name)
+
+
+@tf.function
+def tf_apply_cmap(tensor: tf.Tensor, cmap: str, color_count: int, normalize: bool = True):
+    if normalize:
+        tensor = normalize_from(tensor, tensor.shape.rank - 2)
+
+    cmap = matplotlib.cm.get_cmap(cmap, color_count)
+    color_range = np.arange(color_count, dtype=np.float32) / (color_count - 1)
+    colors = cmap(color_range)
+    colors = tf.constant(colors[:, :3], dtype=tf.float32)
+
+    indices = tf.cast(tf.round(tensor * tf.cast(color_count - 1, tf.float32)), tf.int32)
+    result = tf.gather(colors, indices)
+
+    return result

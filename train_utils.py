@@ -1,6 +1,5 @@
 import tensorflow as tf
 from tensorflow.python.keras import Model
-from tensorflow.python.keras.engine.training_utils import MetricsAggregator
 from tensorflow.python.keras.saving import hdf5_format, saving_utils
 from tensorflow.python.keras.optimizer_v2.optimizer_v2 import OptimizerV2
 from tensorflow.python.util import serialization
@@ -156,21 +155,6 @@ class CyclicSchedule(CustomLearningRateSchedule):
 
 
 # endregion
-
-class LossAggregator(MetricsAggregator):
-    def aggregate(self, batch_outs, batch_start=None, batch_end=None):
-        for i in range(len(self.results)):
-            loss = batch_outs[i]
-            if not self.use_steps:
-                loss *= (batch_end - batch_start)
-            self.results[i] += loss
-
-    def finalize(self):
-        if not self.results:
-            raise ValueError("Empty training data.")
-
-        for i in range(len(self.results)):
-            self.results[i] /= (self.num_samples or self.steps)
 
 
 # region HDF5 / H5PY

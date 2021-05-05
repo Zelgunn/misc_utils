@@ -124,6 +124,13 @@ def standardize_from(inputs: tf.Tensor, start_axis=1) -> tf.Tensor:
     return outputs
 
 
+def normalize_from(inputs: tf.Tensor, start_axis=1) -> tf.Tensor:
+    sample_min = reduce_min_from(inputs, start_axis, keepdims=True)
+    sample_max = reduce_max_from(inputs, start_axis, keepdims=True)
+    outputs = (inputs - sample_min) / (sample_max - sample_min)
+    return outputs
+
+
 @tf.function
 def binarize(x: tf.Tensor,
              threshold: tf.Tensor,
