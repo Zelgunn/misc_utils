@@ -4,6 +4,9 @@ import numpy as np
 import os
 from typing import List, Union, Tuple
 
+SingleTensor = Union[tf.Tensor, np.ndarray]
+TensorList = Union[SingleTensor, List[SingleTensor]]
+
 
 def to_list(x):
     if isinstance(x, list):
@@ -72,3 +75,27 @@ def expand_dims_to_rank(x: tf.Tensor, target: tf.Tensor) -> tf.Tensor:
     rank_offset = target.shape.rank - x.shape.rank
     x = tf.reshape(x, tf.concat([tf.shape(x), [1] * rank_offset], axis=0))
     return x
+
+
+def unpack_test_sample(sample: List[TensorList], modality_count: int) -> Tuple[TensorList, TensorList, tf.Tensor]:
+    if modality_count == 1 and isinstance(sample[0], tf.Tensor) and len(sample) == 3:
+        inputs, outputs, labels = sample
+    elif len(sample) == modality_count + 1:
+        *inputs, labels = sample
+        outputs = inputs
+    else:
+        raise ValueError("Length of sample does not match. Found {} but expected {} or 3.".format(len(sample),
+                                                                                                  modality_count + 1))
+    return inputs, outputs, labels
+
+
+def get_model_inputs_count(model: tf.keras.Model) -> int:
+    if model.inputs is not None:
+        return len(model.inputs)
+
+    # noinspection PyProtectedMember
+    if model._saved_model_inputs_spec is not None:
+        # noinspection PyProtectedMember
+        return len(model._saved_model_inputs_spec)
+
+    raise RuntimeError("Could not determine the number of inputs for the model. Consider using model._set_inputs.")
