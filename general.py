@@ -34,7 +34,7 @@ def int_floor(value, epsilon=1e-5) -> int:
     return int(np.floor(value + epsilon))
 
 
-def get_known_shape(tensor: tf.Tensor):
+def get_known_shape(tensor: tf.Tensor) -> List[Union[tf.Tensor, int]]:
     dyn_shape = tf.shape(tensor)
     outputs_shape = [dyn_shape[i] if tensor.shape[i] is None else tensor.shape[i]
                      for i in range(len(tensor.shape))]
@@ -78,8 +78,39 @@ def expand_dims_to_rank(x: tf.Tensor, target: tf.Tensor) -> tf.Tensor:
 
 
 def unpack_test_sample(sample: List[TensorList], modality_count: int) -> Tuple[TensorList, TensorList, tf.Tensor]:
-    if modality_count == 1 and isinstance(sample[0], tf.Tensor) and len(sample) == 3:
-        inputs, outputs, labels = sample
+    if modality_count == 1:
+        if len(sample) == 3:
+            inputs, outputs, labels = sample
+        elif len(sample) == 2:
+            inputs, labels = sample
+            outputs = inputs
+        else:
+            raise ValueError("Expected a list/tuple containing either 2 or 3 elements. Got {}".format(len(sample)))
+    elif modality_count == len(sample) + 1:
+        if len(sample) == 2:
+            sample = (sample[0], sample[0], sample[1])
+        if len(sample) == 3:
+            both_lists = isinstance(sample[0], (list, tuple)) and isinstance(sample[1], (list, tuple))
+            one_list = isinstance(sample[0], (list, tuple)) or isinstance(sample[1], (list, tuple))
+            if both_lists:
+                lists_match = len(sample[0]) == len(sample[1])
+                if lists_match:
+                    inputs, outputs, labels = sample
+                else:
+                    raise ValueError("[Multimodal setup] Inputs and Outputs do not contain the same amount of "
+                                     "modalities. Got {} and {}.".format(len(sample[0]), len(sample[1])))
+            elif one_list:
+                raise ValueError("[Multimodal setup] Inputs and Ouputs do not match, only one is a list/tuple.")
+            else:
+                *inputs, labels = sample
+                outputs = inputs
+        else:
+            *inputs, labels = sample
+            outputs = inputs
+
+    if modality_count == 1:
+        if isinstance(sample[0], tf.Tensor) and len(sample) == 3:
+            inputs, outputs, labels = sample
     elif len(sample) == modality_count + 1:
         *inputs, labels = sample
         outputs = inputs
@@ -96,6 +127,8 @@ def get_model_inputs_count(model: tf.keras.Model) -> int:
     # noinspection PyProtectedMember
     if model._saved_model_inputs_spec is not None:
         # noinspection PyProtectedMember
+        if isinstance(model._saved_model_inputs_spec, tf.TensorSpec):
+            return 1
         return len(model._saved_model_inputs_spec)
 
     raise RuntimeError("Could not determine the number of inputs for the model. Consider using model._set_inputs.")
